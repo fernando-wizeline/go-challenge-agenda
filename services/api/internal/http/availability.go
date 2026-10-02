@@ -32,7 +32,6 @@ func NewAvailabilityHandler(uc *usecase.AvailabilityUsecase, client agendav1.Age
 // @Failure     500   {object}  map[string]string
 // @Router      /doctors/{id}/availability [get]
 func (h *AvailabilityHandler) Get(c *gin.Context) {
-	// TODO: this handler returns stub data — wire it to the usecase.
 
 	date := c.Query("date")
 	if _, err := time.Parse("2006-01-02", date); err != nil {

@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"go-challenge-agenda/services/agenda/internal/domain"
@@ -13,6 +14,15 @@ import (
 type ReservationUsecase struct {
 	reservations domain.ReservationRepository
 	patients     domain.PatientRepository
+
+	doctorLocks sync.Map
+}
+
+func (u *ReservationUsecase) lockDoctor(doctorID string) func() {
+	m, _ := u.doctorLocks.LoadOrStore(doctorID, &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 func NewReservationUsecase(
@@ -42,6 +52,10 @@ func (u *ReservationUsecase) Create(ctx context.Context, in CreateReservationInp
 	}
 
 	endsAt := in.StartsAt.Add(in.Type.SlotDuration())
+
+	// Adding a lock taking into consideration race conditions.
+	unlock := u.lockDoctor(in.DoctorID)
+	defer unlock()
 
 	conflict, err := u.hasConflict(ctx, in.DoctorID, in.StartsAt, endsAt)
 	if err != nil {
@@ -103,7 +117,7 @@ func (u *ReservationUsecase) resolvePatient(ctx context.Context, in CreateReserv
 }
 
 // hasConflict checks if [startsAt, endsAt) overlaps any confirmed reservation.
-// Misses: new slot contains existing, new slot ends inside existing.
+// Intervals are half-open, so back-to-back reservations do not conflict.
 func (u *ReservationUsecase) hasConflict(ctx context.Context, doctorID string, startsAt, endsAt time.Time) (bool, error) {
 	// Use a wide window to retrieve candidates
 	existing, err := u.reservations.ListReservations(ctx, doctorID, startsAt.Add(-24*time.Hour), endsAt.Add(24*time.Hour))
@@ -114,7 +128,7 @@ func (u *ReservationUsecase) hasConflict(ctx context.Context, doctorID string, s
 		if int(r.Status) == int(domain.ReservationStatusCancelled) {
 			continue
 		}
-		if startsAt.After(r.StartsAt) && startsAt.Before(r.EndsAt) {
+		if startsAt.Before(r.EndsAt) && endsAt.After(r.StartsAt) {
 			return true, nil
 		}
 	}

@@ -20,7 +20,7 @@ func NewRouter(agendaClient agendav1.AgendaServiceClient) *gin.Engine {
 	resUC := usecase.NewReservationUsecase(agendaClient)
 
 	doctorH := NewDoctorHandler(agendaClient)
-	availH := NewAvailabilityHandler(availUC)
+	availH := NewAvailabilityHandler(availUC, agendaClient)
 	resH := NewReservationHandler(resUC, agendaClient)
 	userH := NewUserHandler(usecase.NewUserUsecase(agendaClient))
 

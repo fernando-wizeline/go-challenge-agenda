@@ -6,17 +6,43 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-// GRPCToHTTP maps gRPC status codes to HTTP status codes.
-// TODO: mapping is incomplete — most codes fall through to 500.
+// statusClientClosedRequest is the non-standard (nginx) status used for canceled requests.
+const statusClientClosedRequest = 499
+
+// GRPCToHTTP maps gRPC status codes to HTTP status codes, following the
+// canonical mapping used by grpc-gateway. Unknown codes fall through to 500.
 func GRPCToHTTP(code codes.Code) int {
 	switch code {
 	case codes.OK:
 		return http.StatusOK
-	case codes.NotFound:
-		return http.StatusNotFound
+	case codes.Canceled:
+		return statusClientClosedRequest
 	case codes.InvalidArgument:
 		return http.StatusBadRequest
-	// TODO: add mappings for AlreadyExists, PermissionDenied, Unauthenticated, ResourceExhausted, etc.
+	case codes.DeadlineExceeded:
+		return http.StatusGatewayTimeout
+	case codes.NotFound:
+		return http.StatusNotFound
+	case codes.AlreadyExists:
+		return http.StatusConflict
+	case codes.PermissionDenied:
+		return http.StatusForbidden
+	case codes.Unauthenticated:
+		return http.StatusUnauthorized
+	case codes.ResourceExhausted:
+		return http.StatusTooManyRequests
+	case codes.FailedPrecondition:
+		return http.StatusBadRequest
+	case codes.Aborted:
+		return http.StatusConflict
+	case codes.OutOfRange:
+		return http.StatusBadRequest
+	case codes.Unimplemented:
+		return http.StatusNotImplemented
+	case codes.Unavailable:
+		return http.StatusServiceUnavailable
+	case codes.Unknown, codes.Internal, codes.DataLoss:
+		return http.StatusInternalServerError
 	default:
 		return http.StatusInternalServerError
 	}

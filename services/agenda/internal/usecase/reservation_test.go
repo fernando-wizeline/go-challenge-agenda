@@ -7,6 +7,7 @@ import (
 
 	"go-challenge-agenda/services/agenda/internal/domain"
 	"go-challenge-agenda/services/agenda/internal/domain/mocks"
+	"go-challenge-agenda/services/agenda/internal/repository/sqlite"
 	"go-challenge-agenda/services/agenda/internal/usecase"
 
 	"github.com/stretchr/testify/assert"
@@ -131,7 +132,43 @@ func TestCreateReservation_FirstVisitDuration(t *testing.T) {
 	assert.Equal(t, expected, actual, "first visit should be 60 minutes")
 }
 
-// TestListReservations is a skeleton — implement me.
+// TestListReservations verifies the SQLite repository returns only the doctor's
+// reservations overlapping the range, ordered by start time.
 func TestListReservations(t *testing.T) {
-	t.Skip("TODO: implement list reservations test")
+	db, err := sqlite.Open(":memory:")
+	require.NoError(t, err)
+	require.NoError(t, sqlite.Migrate(db))
+	t.Cleanup(func() {
+		sqlDB, _ := db.DB()
+		sqlDB.Close()
+	})
+
+	repo := sqlite.NewReservationRepository(db)
+	ctx := context.Background()
+	base := time.Date(2024, 3, 15, 9, 0, 0, 0, time.UTC)
+
+	create := func(id, doctorID string, offsetMin, durMin int) {
+		require.NoError(t, repo.CreateReservation(ctx, &domain.Reservation{
+			ID:        id,
+			DoctorID:  doctorID,
+			PatientID: "patient-001",
+			StartsAt:  base.Add(time.Duration(offsetMin) * time.Minute),
+			EndsAt:    base.Add(time.Duration(offsetMin+durMin) * time.Minute),
+			Status:    domain.ReservationStatus(domain.ReservationStatusConfirmed),
+		}))
+	}
+	create("before", "doc-001", -60, 30)      // 08:00-08:30, entirely before range
+	create("touch-start", "doc-001", -30, 30) // 08:30-09:00, ends exactly at range start
+	create("straddle", "doc-001", 100, 60)    // 10:40-11:40, crosses range end
+	create("inside", "doc-001", 30, 30)       // 09:30-10:00, inside range
+	create("other-doctor", "doc-002", 30, 30)
+
+	got, err := repo.ListReservations(ctx, "doc-001", base, base.Add(2*time.Hour))
+	require.NoError(t, err)
+
+	ids := make([]string, len(got))
+	for i, r := range got {
+		ids[i] = r.ID
+	}
+	assert.Equal(t, []string{"inside", "straddle"}, ids)
 }

@@ -1,7 +1,6 @@
 package http
 
 import (
-	agendav1 "go-challenge-agenda/gen/agenda/v1"
 	"go-challenge-agenda/services/api/internal/usecase"
 
 	"github.com/gin-gonic/gin"
@@ -9,20 +8,22 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-func NewRouter(agendaClient agendav1.AgendaServiceClient) *gin.Engine {
+// NewRouter wires the HTTP handlers. Handlers depend on usecases only, and the
+// usecases on the AgendaPort, so no gRPC or protobuf types appear in this package.
+func NewRouter(agenda usecase.AgendaPort) *gin.Engine {
 	r := gin.Default()
 	r.Use(ErrorMiddleware())
 
 	// Swagger UI
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	availUC := usecase.NewAvailabilityUsecase(agendaClient)
-	resUC := usecase.NewReservationUsecase(agendaClient)
+	availUC := usecase.NewAvailabilityUsecase(agenda)
+	resUC := usecase.NewReservationUsecase(agenda)
 
-	doctorH := NewDoctorHandler(agendaClient)
-	availH := NewAvailabilityHandler(availUC, agendaClient)
-	resH := NewReservationHandler(resUC, agendaClient)
-	userH := NewUserHandler(usecase.NewUserUsecase(agendaClient))
+	doctorH := NewDoctorHandler(usecase.NewDoctorUsecase(agenda))
+	availH := NewAvailabilityHandler(availUC)
+	resH := NewReservationHandler(resUC)
+	userH := NewUserHandler(usecase.NewUserUsecase(agenda))
 
 	v1 := r.Group("/v1")
 	{

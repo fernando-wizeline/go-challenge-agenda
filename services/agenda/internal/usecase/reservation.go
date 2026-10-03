@@ -62,7 +62,7 @@ func (u *ReservationUsecase) Create(ctx context.Context, in CreateReservationInp
 		return nil, fmt.Errorf("check conflict: %w", err)
 	}
 	if conflict {
-		return nil, fmt.Errorf("time slot not available")
+		return nil, domain.ErrSlotNotAvailable
 	}
 
 	res := &domain.Reservation{
@@ -79,6 +79,15 @@ func (u *ReservationUsecase) Create(ctx context.Context, in CreateReservationInp
 		return nil, fmt.Errorf("create reservation: %w", err)
 	}
 	return res, nil
+}
+
+// ListReservationsByUser returns all reservations of a patient. It returns an
+// error wrapping domain.ErrPatientNotFound if the patient does not exist.
+func (u *ReservationUsecase) ListReservationsByUser(ctx context.Context, patientID string) ([]*domain.Reservation, error) {
+	if _, err := u.patients.GetPatient(ctx, patientID); err != nil {
+		return nil, fmt.Errorf("get patient: %w", err)
+	}
+	return u.reservations.ListReservationsByUser(ctx, patientID)
 }
 
 func (u *ReservationUsecase) Cancel(ctx context.Context, id string) error {

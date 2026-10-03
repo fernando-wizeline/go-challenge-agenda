@@ -55,6 +55,23 @@ func (r *ReservationRepository) ListReservations(ctx context.Context, doctorID s
 	return reservations, nil
 }
 
+// ListReservationsByUser returns all reservations of a patient, ordered by start time.
+func (r *ReservationRepository) ListReservationsByUser(ctx context.Context, patientID string) ([]*domain.Reservation, error) {
+	var ms []models.Reservation
+	err := r.db.WithContext(ctx).
+		Where("patient_id = ?", patientID).
+		Order("starts_at").
+		Find(&ms).Error
+	if err != nil {
+		return nil, err
+	}
+	reservations := make([]*domain.Reservation, len(ms))
+	for i := range ms {
+		reservations[i] = models.ReservationFromModel(&ms[i])
+	}
+	return reservations, nil
+}
+
 func (r *ReservationRepository) UpdateReservation(ctx context.Context, res *domain.Reservation) error {
 	m := models.ReservationToModel(res)
 	return r.db.WithContext(ctx).Save(m).Error

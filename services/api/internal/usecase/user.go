@@ -85,6 +85,18 @@ func (u *UserUsecase) Delete(ctx context.Context, id string) error {
 	return err
 }
 
+func (u *UserUsecase) ListReservations(ctx context.Context, id string) ([]domain.ReservationResponse, error) {
+	resp, err := u.agendaClient.ListReservationsByUser(ctx, &agendav1.ListReservationsByUserRequest{PatientId: id})
+	if err != nil {
+		return nil, fmt.Errorf("agenda.ListReservationsByUser: %w", err)
+	}
+	reservations := make([]domain.ReservationResponse, len(resp.Reservations))
+	for i, r := range resp.Reservations {
+		reservations[i] = *protoReservationToDTO(r)
+	}
+	return reservations, nil
+}
+
 func protoPatientToDTO(p *agendav1.Patient) domain.UserResponse {
 	return domain.UserResponse{ID: p.Id, Name: p.Name, Phone: p.Phone, Email: p.Email}
 }

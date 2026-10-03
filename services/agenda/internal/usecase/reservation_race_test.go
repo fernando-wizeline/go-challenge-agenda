@@ -89,6 +89,18 @@ func (r *concurrentReservationRepo) ListReservations(_ context.Context, doctorID
 	return result, nil
 }
 
+func (r *concurrentReservationRepo) ListReservationsByUser(_ context.Context, patientID string) ([]*domain.Reservation, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var result []*domain.Reservation
+	for _, res := range r.reservations {
+		if res.PatientID == patientID {
+			result = append(result, res)
+		}
+	}
+	return result, nil
+}
+
 func (r *concurrentReservationRepo) UpdateReservation(_ context.Context, _ *domain.Reservation) error {
 	return nil
 }

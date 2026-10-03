@@ -22,7 +22,7 @@ func (r *PatientRepository) GetPatient(ctx context.Context, id string) (*domain.
 	var m models.Patient
 	res := r.db.WithContext(ctx).First(&m, "id = ?", id)
 	if res.Error == gorm.ErrRecordNotFound {
-		return nil, fmt.Errorf("patient not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", domain.ErrPatientNotFound, id)
 	}
 	return models.PatientFromModel(&m), res.Error
 }

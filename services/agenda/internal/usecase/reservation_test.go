@@ -55,7 +55,7 @@ func TestCreateReservation_ConflictDetected(t *testing.T) {
 		PatientEmail: "new@example.com",
 	})
 
-	assert.Error(t, err, "expected conflict error")
+	assert.ErrorIs(t, err, domain.ErrSlotNotAvailable, "expected conflict error")
 }
 
 // TestCreateReservation_BoundaryConflict verifies adjacent booking (starts exactly when prior ends) is ALLOWED.
@@ -171,4 +171,90 @@ func TestListReservations(t *testing.T) {
 		ids[i] = r.ID
 	}
 	assert.Equal(t, []string{"inside", "straddle"}, ids)
+}
+
+func TestListReservationsByUser(t *testing.T) {
+	ctx := context.Background()
+	want := []*domain.Reservation{{ID: "r1", PatientID: "pat-001"}}
+
+	reservationRepo := mocks.NewReservationRepository(t)
+	patientRepo := mocks.NewPatientRepository(t)
+	patientRepo.EXPECT().GetPatient(ctx, "pat-001").Return(&domain.Patient{ID: "pat-001"}, nil)
+	reservationRepo.EXPECT().ListReservationsByUser(ctx, "pat-001").Return(want, nil)
+
+	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo)
+	got, err := uc.ListReservationsByUser(ctx, "pat-001")
+
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+}
+
+func TestListReservationsByUser_UnknownPatient(t *testing.T) {
+	ctx := context.Background()
+
+	// reservationRepo has no expectations: it must not be queried for an unknown patient.
+	reservationRepo := mocks.NewReservationRepository(t)
+	patientRepo := mocks.NewPatientRepository(t)
+	patientRepo.EXPECT().GetPatient(ctx, "missing").Return(nil, domain.ErrPatientNotFound)
+
+	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo)
+	_, err := uc.ListReservationsByUser(ctx, "missing")
+
+	assert.ErrorIs(t, err, domain.ErrPatientNotFound)
+}
+
+func TestListReservationsByUser_Repository(t *testing.T) {
+	db, err := sqlite.Open(":memory:")
+	require.NoError(t, err)
+	require.NoError(t, sqlite.Migrate(db))
+	t.Cleanup(func() {
+		sqlDB, _ := db.DB()
+		sqlDB.Close()
+	})
+
+	repo := sqlite.NewReservationRepository(db)
+	ctx := context.Background()
+	base := time.Date(2024, 3, 15, 9, 0, 0, 0, time.UTC)
+
+	create := func(id, patientID string, offsetMin int) {
+		require.NoError(t, repo.CreateReservation(ctx, &domain.Reservation{
+			ID:        id,
+			DoctorID:  "doc-001",
+			PatientID: patientID,
+			StartsAt:  base.Add(time.Duration(offsetMin) * time.Minute),
+			EndsAt:    base.Add(time.Duration(offsetMin+30) * time.Minute),
+			Status:    domain.ReservationStatus(domain.ReservationStatusConfirmed),
+		}))
+	}
+	create("later", "pat-001", 120)
+	create("other-patient", "pat-002", 30)
+	create("earlier", "pat-001", 0)
+
+	got, err := repo.ListReservationsByUser(ctx, "pat-001")
+	require.NoError(t, err)
+
+	ids := make([]string, len(got))
+	for i, r := range got {
+		ids[i] = r.ID
+	}
+	assert.Equal(t, []string{"earlier", "later"}, ids)
+}
+
+func TestCreateReservation_UnknownPatient(t *testing.T) {
+	ctx := context.Background()
+
+	// reservationRepo has no expectations: nothing may be queried or created.
+	reservationRepo := mocks.NewReservationRepository(t)
+	patientRepo := mocks.NewPatientRepository(t)
+	patientRepo.EXPECT().GetPatient(ctx, "missing").Return(nil, domain.ErrPatientNotFound)
+
+	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo)
+	_, err := uc.Create(ctx, usecase.CreateReservationInput{
+		DoctorID:  "doc-001",
+		StartsAt:  time.Date(2025, 6, 2, 10, 0, 0, 0, time.UTC),
+		Type:      domain.ReservationTypeFollowUp,
+		PatientID: "missing",
+	})
+
+	assert.ErrorIs(t, err, domain.ErrPatientNotFound)
 }

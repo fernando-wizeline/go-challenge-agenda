@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	agendav1 "go-challenge-agenda/gen/agenda/v1"
@@ -101,6 +102,12 @@ func (s *Server) CreateReservation(ctx context.Context, req *agendav1.CreateRese
 		PatientPhone: req.PatientPhone,
 		PatientEmail: req.PatientEmail,
 	})
+	if errors.Is(err, domain.ErrSlotNotAvailable) {
+		return nil, status.Errorf(codes.AlreadyExists, "%v", err)
+	}
+	if errors.Is(err, domain.ErrPatientNotFound) {
+		return nil, status.Errorf(codes.NotFound, "%v", err)
+	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create reservation: %v", err)
 	}
@@ -125,6 +132,24 @@ func (s *Server) ListReservations(ctx context.Context, req *agendav1.ListReserva
 		return nil, status.Errorf(codes.InvalidArgument, "invalid to: %v", err)
 	}
 	list, err := s.reservations.List(ctx, req.DoctorId, from, to)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%v", err)
+	}
+	pb := make([]*agendav1.Reservation, len(list))
+	for i, r := range list {
+		pb[i] = domainReservationToProto(r)
+	}
+	return &agendav1.ListReservationsResponse{Reservations: pb}, nil
+}
+
+func (s *Server) ListReservationsByUser(ctx context.Context, req *agendav1.ListReservationsByUserRequest) (*agendav1.ListReservationsResponse, error) {
+	if req.PatientId == "" {
+		return nil, status.Error(codes.InvalidArgument, "patient_id is required")
+	}
+	list, err := s.reservations.ListReservationsByUser(ctx, req.PatientId)
+	if errors.Is(err, domain.ErrPatientNotFound) {
+		return nil, status.Errorf(codes.NotFound, "%v", err)
+	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%v", err)
 	}

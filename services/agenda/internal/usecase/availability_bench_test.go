@@ -31,6 +31,9 @@ func (f *fakeEmptyReservationRepo) GetReservation(_ context.Context, _ string) (
 func (f *fakeEmptyReservationRepo) ListReservations(_ context.Context, _ string, _, _ time.Time) ([]*domain.Reservation, error) {
 	return nil, nil
 }
+func (f *fakeEmptyReservationRepo) ListReservationsByUser(_ context.Context, _ string) ([]*domain.Reservation, error) {
+	return nil, nil
+}
 func (f *fakeEmptyReservationRepo) UpdateReservation(_ context.Context, _ *domain.Reservation) error {
 	return nil
 }
@@ -104,6 +107,9 @@ func (f *fakeListReservationRepo) GetReservation(_ context.Context, _ string) (*
 }
 func (f *fakeListReservationRepo) ListReservations(_ context.Context, _ string, _, _ time.Time) ([]*domain.Reservation, error) {
 	return f.reservations, nil
+}
+func (f *fakeListReservationRepo) ListReservationsByUser(_ context.Context, _ string) ([]*domain.Reservation, error) {
+	return nil, nil
 }
 func (f *fakeListReservationRepo) UpdateReservation(_ context.Context, _ *domain.Reservation) error {
 	return nil

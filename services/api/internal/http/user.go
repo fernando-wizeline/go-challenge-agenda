@@ -109,10 +109,12 @@ func (h *UserHandler) Update(c *gin.Context) {
 // @Failure     500  {object}  map[string]string
 // @Router      /users/{id}/reservations [get]
 func (h *UserHandler) ListReservations(c *gin.Context) {
-	// TODO: implement — fetch all reservations where patient_id matches the user id.
-	// Hint: the existing GET /v1/reservations endpoint accepts a doctor_id filter;
-	// you will need a way to filter by patient_id instead.
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not implemented"})
+	reservations, err := h.uc.ListReservations(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, reservations)
 }
 
 // Delete godoc

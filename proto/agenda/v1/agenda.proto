@@ -163,6 +163,10 @@ message ListReservationsRequest {
 }
 message ListReservationsResponse { repeated Reservation reservations = 1; }
 
+// Returns all reservations of a patient; NOT_FOUND if the patient does not exist.
+// Reuses ListReservationsResponse as the reply.
+message ListReservationsByUserRequest { string patient_id = 1; }
+
 message CancelReservationRequest { string id = 1; }
 message CancelReservationResponse {}
 
@@ -187,6 +191,7 @@ service AgendaService {
   rpc CreateReservation(CreateReservationRequest) returns (CreateReservationResponse);
   rpc GetReservation(GetReservationRequest) returns (GetReservationResponse);
   rpc ListReservations(ListReservationsRequest) returns (ListReservationsResponse);
+  rpc ListReservationsByUser(ListReservationsByUserRequest) returns (ListReservationsResponse);
   rpc CancelReservation(CancelReservationRequest) returns (CancelReservationResponse);
 
   // TODO: UpdateReservation

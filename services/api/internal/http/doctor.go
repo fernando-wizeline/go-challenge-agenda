@@ -3,18 +3,17 @@ package http
 import (
 	"net/http"
 
-	agendav1 "go-challenge-agenda/gen/agenda/v1"
-	"go-challenge-agenda/services/api/internal/domain"
+	"go-challenge-agenda/services/api/internal/usecase"
 
 	"github.com/gin-gonic/gin"
 )
 
 type DoctorHandler struct {
-	agendaClient agendav1.AgendaServiceClient
+	uc *usecase.DoctorUsecase
 }
 
-func NewDoctorHandler(client agendav1.AgendaServiceClient) *DoctorHandler {
-	return &DoctorHandler{agendaClient: client}
+func NewDoctorHandler(uc *usecase.DoctorUsecase) *DoctorHandler {
+	return &DoctorHandler{uc: uc}
 }
 
 // List godoc
@@ -25,14 +24,10 @@ func NewDoctorHandler(client agendav1.AgendaServiceClient) *DoctorHandler {
 // @Failure     500  {object}  map[string]string
 // @Router      /doctors [get]
 func (h *DoctorHandler) List(c *gin.Context) {
-	resp, err := h.agendaClient.ListDoctors(c.Request.Context(), &agendav1.ListDoctorsRequest{})
+	doctors, err := h.uc.List(c.Request.Context())
 	if err != nil {
 		_ = c.Error(err)
 		return
-	}
-	var doctors []domain.DoctorResponse
-	for _, d := range resp.Doctors {
-		doctors = append(doctors, protoDoctorToDTO(d))
 	}
 	c.JSON(http.StatusOK, doctors)
 }
@@ -47,22 +42,10 @@ func (h *DoctorHandler) List(c *gin.Context) {
 // @Failure     500  {object}  map[string]string
 // @Router      /doctors/{id} [get]
 func (h *DoctorHandler) Get(c *gin.Context) {
-	resp, err := h.agendaClient.GetDoctor(c.Request.Context(), &agendav1.GetDoctorRequest{Id: c.Param("id")})
+	doctor, err := h.uc.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		_ = c.Error(err)
 		return
 	}
-	c.JSON(http.StatusOK, protoDoctorToDTO(resp.Doctor))
-}
-
-func protoDoctorToDTO(d *agendav1.Doctor) domain.DoctorResponse {
-	resp := domain.DoctorResponse{ID: d.Id, Name: d.Name, Specialty: d.Specialty}
-	for _, wh := range d.WorkingHours {
-		resp.WorkingHours = append(resp.WorkingHours, domain.WorkingHoursResp{
-			Weekday: int(wh.Weekday),
-			From:    wh.From,
-			To:      wh.To,
-		})
-	}
-	return resp
+	c.JSON(http.StatusOK, doctor)
 }

@@ -31,7 +31,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
-		Handler: apihttp.NewRouter(agendaClient),
+		Handler: apihttp.NewRouter(apiclient.NewAgendaAdapter(agendaClient)),
 	}
 
 	quit := make(chan os.Signal, 1)

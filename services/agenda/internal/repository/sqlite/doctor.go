@@ -32,7 +32,7 @@ func (r *DoctorRepository) GetDoctor(ctx context.Context, id string) (*domain.Do
 
 func (r *DoctorRepository) ListDoctors(ctx context.Context) ([]*domain.Doctor, error) {
 	var ms []models.Doctor
-	if err := r.db.WithContext(ctx).Find(&ms).Error; err != nil {
+	if err := r.db.WithContext(ctx).Preload("WorkingHours").Find(&ms).Error; err != nil {
 		return nil, err
 	}
 	doctors := make([]*domain.Doctor, len(ms))

@@ -4,20 +4,17 @@ import (
 	"net/http"
 	"time"
 
-	agendav1 "go-challenge-agenda/gen/agenda/v1"
-	"go-challenge-agenda/services/api/internal/domain"
 	"go-challenge-agenda/services/api/internal/usecase"
 
 	"github.com/gin-gonic/gin"
 )
 
 type AvailabilityHandler struct {
-	uc           *usecase.AvailabilityUsecase
-	agendaClient agendav1.AgendaServiceClient
+	uc *usecase.AvailabilityUsecase
 }
 
-func NewAvailabilityHandler(uc *usecase.AvailabilityUsecase, client agendav1.AgendaServiceClient) *AvailabilityHandler {
-	return &AvailabilityHandler{uc: uc, agendaClient: client}
+func NewAvailabilityHandler(uc *usecase.AvailabilityUsecase) *AvailabilityHandler {
+	return &AvailabilityHandler{uc: uc}
 }
 
 // Get godoc
@@ -32,61 +29,26 @@ func NewAvailabilityHandler(uc *usecase.AvailabilityUsecase, client agendav1.Age
 // @Failure     500   {object}  map[string]string
 // @Router      /doctors/{id}/availability [get]
 func (h *AvailabilityHandler) Get(c *gin.Context) {
-
 	date := c.Query("date")
 	if _, err := time.Parse("2006-01-02", date); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "date is required and must be in YYYY-MM-DD format"})
 		return
 	}
 
-	var reservationType agendav1.ReservationType
-	switch c.Query("type") {
-	case "", "first_visit": //defaulting missing value to first_visit
-		reservationType = agendav1.ReservationType_RESERVATION_TYPE_FIRST_VISIT
-	case "follow_up":
-		reservationType = agendav1.ReservationType_RESERVATION_TYPE_FOLLOW_UP
+	reservationType := c.Query("type")
+	switch reservationType {
+	case "":
+		reservationType = "first_visit" // default for a missing value
+	case "first_visit", "follow_up":
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "type must be first_visit or follow_up"})
 		return
 	}
 
-	resp, err := h.agendaClient.GetAvailability(c.Request.Context(), &agendav1.GetAvailabilityRequest{
-		DoctorId:        c.Param("id"),
-		Date:            date,
-		ReservationType: reservationType,
-	})
-
+	resp, err := h.uc.GetAvailability(c.Request.Context(), c.Param("id"), date, reservationType)
 	if err != nil {
 		_ = c.Error(err)
 		return
 	}
-
-	c.JSON(http.StatusOK, protoAvailabilityToDTO(resp))
-}
-
-func protoAvailabilityToDTO(a *agendav1.GetAvailabilityResponse) *domain.AvailabilityResponse {
-	if a == nil {
-		return nil
-	}
-
-	slots := make([]domain.AvailableSlot, 0, len(a.Slots))
-	for _, s := range a.Slots {
-		slots = append(slots, domain.AvailableSlot{
-			StartsAt: s.GetStartsAt(),
-			EndsAt:   s.GetEndsAt(),
-		})
-	}
-
-	freeRanges := make([]domain.TimeRange, 0, len(a.FreeRanges))
-	for _, r := range a.FreeRanges {
-		freeRanges = append(freeRanges, domain.TimeRange{
-			From: r.GetFrom(),
-			To:   r.GetTo(),
-		})
-	}
-
-	return &domain.AvailabilityResponse{
-		Slots:      slots,
-		FreeRanges: freeRanges,
-	}
+	c.JSON(http.StatusOK, resp)
 }

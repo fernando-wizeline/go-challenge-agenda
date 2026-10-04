@@ -121,7 +121,7 @@ func TestConcurrentReservationCreation(t *testing.T) {
 
 	resRepo := &concurrentReservationRepo{}
 	patRepo := &concurrentPatientRepo{}
-	uc := usecase.NewReservationUsecase(resRepo, patRepo)
+	uc := usecase.NewReservationUsecase(resRepo, patRepo, &fakeEmptyBlockedSlotRepo{})
 
 	var (
 		wg      sync.WaitGroup
@@ -166,7 +166,7 @@ func TestConcurrentDistinctSlots(t *testing.T) {
 
 	resRepo := &concurrentReservationRepo{}
 	patRepo := &concurrentPatientRepo{}
-	uc := usecase.NewReservationUsecase(resRepo, patRepo)
+	uc := usecase.NewReservationUsecase(resRepo, patRepo, &fakeEmptyBlockedSlotRepo{})
 
 	var (
 		wg     sync.WaitGroup

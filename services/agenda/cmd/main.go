@@ -39,7 +39,7 @@ func main() {
 	blockedSlotRepo := sqlite.NewBlockedSlotRepository(db)
 
 	availUC := usecase.NewAvailabilityUsecase(doctorRepo, reservationRepo, blockedSlotRepo)
-	reservationUC := usecase.NewReservationUsecase(reservationRepo, patientRepo)
+	reservationUC := usecase.NewReservationUsecase(reservationRepo, patientRepo, blockedSlotRepo)
 	blockedSlotUC := usecase.NewBlockedSlotUsecase(blockedSlotRepo)
 
 	srv := agendagrpc.NewServer(doctorRepo, availUC, reservationUC, blockedSlotUC, patientRepo)

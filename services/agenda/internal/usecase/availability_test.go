@@ -43,6 +43,7 @@ func TestGetAvailability_HappyPath(t *testing.T) {
 
 	doctorRepo.EXPECT().GetDoctor(context.Background(), "doc-001").Return(mondayDoctor(), nil)
 	reservationRepo.EXPECT().ListReservations(context.Background(), "doc-001", dayStart, dayEnd).Return(nil, nil)
+	blockedSlotRepo.EXPECT().ListBlockedSlots(context.Background(), "doc-001", dayStart, dayEnd).Return(nil, nil)
 
 	uc := usecase.NewAvailabilityUsecase(doctorRepo, reservationRepo, blockedSlotRepo)
 
@@ -53,7 +54,6 @@ func TestGetAvailability_HappyPath(t *testing.T) {
 }
 
 // TestGetAvailability_WithBlockedSlots verifies that blocked slots remove time from availability.
-// This test FAILS because blocked slots are not yet factored into the availability calculation.
 func TestGetAvailability_WithBlockedSlots(t *testing.T) {
 	date := nextMonday()
 	dayStart := time.Date(date.Year(), date.Month(), date.Day(), 9, 0, 0, 0, time.UTC)
@@ -67,22 +67,67 @@ func TestGetAvailability_WithBlockedSlots(t *testing.T) {
 
 	doctorRepo.EXPECT().GetDoctor(context.Background(), "doc-001").Return(mondayDoctor(), nil)
 	reservationRepo.EXPECT().ListReservations(context.Background(), "doc-001", dayStart, dayEnd).Return(nil, nil)
-	// NOTE: this expectation will not be called until the bug is fixed
-	// blockedSlotRepo.EXPECT().ListBlockedSlots(...).Return(...)
-
-	_ = blockedSlotRepo // suppress unused warning until wired
+	blockedSlotRepo.EXPECT().ListBlockedSlots(context.Background(), "doc-001", dayStart, dayEnd).
+		Return([]*domain.BlockedSlot{{StartsAt: blockedStart, EndsAt: blockedEnd}}, nil)
 
 	uc := usecase.NewAvailabilityUsecase(doctorRepo, reservationRepo, blockedSlotRepo)
 
 	result, err := uc.GetAvailability(context.Background(), "doc-001", date, domain.ReservationTypeFollowUp)
 	require.NoError(t, err)
-
-	blocked := &domain.BlockedSlot{StartsAt: blockedStart, EndsAt: blockedEnd}
-	_ = blocked
+	assert.NotEmpty(t, result.Slots)
 
 	for _, slot := range result.Slots {
 		if !slot.StartsAt.Before(blockedStart) && slot.StartsAt.Before(blockedEnd) {
 			t.Errorf("slot %v falls within blocked period [%v, %v]", slot.StartsAt, blockedStart, blockedEnd)
 		}
 	}
+}
+
+// A weekly block created weeks earlier must still block today's availability.
+func TestGetAvailability_WithRecurringBlockedSlot(t *testing.T) {
+	date := nextMonday()
+	dayStart := time.Date(date.Year(), date.Month(), date.Day(), 9, 0, 0, 0, time.UTC)
+	dayEnd := time.Date(date.Year(), date.Month(), date.Day(), 17, 0, 0, 0, time.UTC)
+	weekly := &domain.BlockedSlot{
+		StartsAt:       dayStart.AddDate(0, 0, -21).Add(3 * time.Hour), // 12:00, three Mondays ago
+		EndsAt:         dayStart.AddDate(0, 0, -21).Add(4 * time.Hour), // 13:00
+		RecurrenceType: domain.RecurrenceWeekly,
+	}
+
+	doctorRepo := mocks.NewDoctorRepository(t)
+	reservationRepo := mocks.NewReservationRepository(t)
+	blockedSlotRepo := mocks.NewBlockedSlotRepository(t)
+	doctorRepo.EXPECT().GetDoctor(context.Background(), "doc-001").Return(mondayDoctor(), nil)
+	reservationRepo.EXPECT().ListReservations(context.Background(), "doc-001", dayStart, dayEnd).Return(nil, nil)
+	blockedSlotRepo.EXPECT().ListBlockedSlots(context.Background(), "doc-001", dayStart, dayEnd).
+		Return([]*domain.BlockedSlot{weekly}, nil)
+
+	uc := usecase.NewAvailabilityUsecase(doctorRepo, reservationRepo, blockedSlotRepo)
+	result, err := uc.GetAvailability(context.Background(), "doc-001", date, domain.ReservationTypeFollowUp)
+	require.NoError(t, err)
+
+	noon := dayStart.Add(3 * time.Hour)
+	for _, slot := range result.Slots {
+		if !slot.StartsAt.Before(noon) && slot.StartsAt.Before(noon.Add(time.Hour)) {
+			t.Errorf("slot %v falls within recurring block", slot.StartsAt)
+		}
+	}
+	assert.Len(t, result.FreeRanges, 2)
+}
+
+func TestGetAvailability_BlockedSlotsError(t *testing.T) {
+	date := nextMonday()
+	dayStart := time.Date(date.Year(), date.Month(), date.Day(), 9, 0, 0, 0, time.UTC)
+	dayEnd := time.Date(date.Year(), date.Month(), date.Day(), 17, 0, 0, 0, time.UTC)
+
+	doctorRepo := mocks.NewDoctorRepository(t)
+	reservationRepo := mocks.NewReservationRepository(t)
+	blockedSlotRepo := mocks.NewBlockedSlotRepository(t)
+	doctorRepo.EXPECT().GetDoctor(context.Background(), "doc-001").Return(mondayDoctor(), nil)
+	reservationRepo.EXPECT().ListReservations(context.Background(), "doc-001", dayStart, dayEnd).Return(nil, nil)
+	blockedSlotRepo.EXPECT().ListBlockedSlots(context.Background(), "doc-001", dayStart, dayEnd).Return(nil, assert.AnError)
+
+	uc := usecase.NewAvailabilityUsecase(doctorRepo, reservationRepo, blockedSlotRepo)
+	_, err := uc.GetAvailability(context.Background(), "doc-001", date, domain.ReservationTypeFollowUp)
+	assert.ErrorIs(t, err, assert.AnError)
 }

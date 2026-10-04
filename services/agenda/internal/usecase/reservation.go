@@ -14,6 +14,7 @@ import (
 type ReservationUsecase struct {
 	reservations domain.ReservationRepository
 	patients     domain.PatientRepository
+	blockedSlots domain.BlockedSlotRepository
 
 	doctorLocks sync.Map
 }
@@ -28,10 +29,12 @@ func (u *ReservationUsecase) lockDoctor(doctorID string) func() {
 func NewReservationUsecase(
 	reservations domain.ReservationRepository,
 	patients domain.PatientRepository,
+	blockedSlots domain.BlockedSlotRepository,
 ) *ReservationUsecase {
 	return &ReservationUsecase{
 		reservations: reservations,
 		patients:     patients,
+		blockedSlots: blockedSlots,
 	}
 }
 
@@ -62,6 +65,14 @@ func (u *ReservationUsecase) Create(ctx context.Context, in CreateReservationInp
 		return nil, fmt.Errorf("check conflict: %w", err)
 	}
 	if conflict {
+		return nil, domain.ErrSlotNotAvailable
+	}
+
+	blocked, err := u.isBlocked(ctx, in.DoctorID, in.StartsAt, endsAt)
+	if err != nil {
+		return nil, fmt.Errorf("check blocked slots: %w", err)
+	}
+	if blocked {
 		return nil, domain.ErrSlotNotAvailable
 	}
 
@@ -139,6 +150,24 @@ func (u *ReservationUsecase) hasConflict(ctx context.Context, doctorID string, s
 		}
 		if startsAt.Before(r.EndsAt) && endsAt.After(r.StartsAt) {
 			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// isBlocked checks if [startsAt, endsAt) overlaps any occurrence of the doctor's
+// blocked slots. Intervals are half-open, so a reservation may start exactly
+// when a block ends or end exactly when one starts.
+func (u *ReservationUsecase) isBlocked(ctx context.Context, doctorID string, startsAt, endsAt time.Time) (bool, error) {
+	slots, err := u.blockedSlots.ListBlockedSlots(ctx, doctorID, startsAt, endsAt)
+	if err != nil {
+		return false, err
+	}
+	for _, b := range slots {
+		for _, occ := range b.Occurrences(startsAt, endsAt) {
+			if startsAt.Before(occ.EndsAt) && endsAt.After(occ.StartsAt) {
+				return true, nil
+			}
 		}
 	}
 	return false, nil

@@ -131,3 +131,38 @@ func TestGetAvailability_BlockedSlotsError(t *testing.T) {
 	_, err := uc.GetAvailability(context.Background(), "doc-001", date, domain.ReservationTypeFollowUp)
 	assert.ErrorIs(t, err, assert.AnError)
 }
+
+func TestGetAvailability_SlotLengthByType(t *testing.T) {
+	date := nextMonday()
+	dayStart := time.Date(date.Year(), date.Month(), date.Day(), 9, 0, 0, 0, time.UTC)
+	dayEnd := time.Date(date.Year(), date.Month(), date.Day(), 17, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name      string
+		resType   domain.ReservationType
+		wantSlots int
+		wantLen   time.Duration
+	}{
+		{"first visit", domain.ReservationTypeFirstVisit, 8, time.Hour},
+		{"follow up", domain.ReservationTypeFollowUp, 16, 30 * time.Minute},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			doctorRepo := mocks.NewDoctorRepository(t)
+			reservationRepo := mocks.NewReservationRepository(t)
+			blockedSlotRepo := mocks.NewBlockedSlotRepository(t)
+			doctorRepo.EXPECT().GetDoctor(context.Background(), "doc-001").Return(mondayDoctor(), nil)
+			reservationRepo.EXPECT().ListReservations(context.Background(), "doc-001", dayStart, dayEnd).Return(nil, nil)
+			blockedSlotRepo.EXPECT().ListBlockedSlots(context.Background(), "doc-001", dayStart, dayEnd).Return(nil, nil)
+
+			uc := usecase.NewAvailabilityUsecase(doctorRepo, reservationRepo, blockedSlotRepo)
+			result, err := uc.GetAvailability(context.Background(), "doc-001", date, tc.resType)
+			require.NoError(t, err)
+
+			require.Len(t, result.Slots, tc.wantSlots)
+			for _, s := range result.Slots {
+				assert.Equal(t, tc.wantLen, s.EndsAt.Sub(s.StartsAt))
+			}
+		})
+	}
+}

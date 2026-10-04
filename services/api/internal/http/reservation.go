@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"time"
 
-	agendav1 "go-challenge-agenda/gen/agenda/v1"
 	"go-challenge-agenda/services/api/internal/domain"
 	"go-challenge-agenda/services/api/internal/usecase"
 
@@ -12,12 +11,11 @@ import (
 )
 
 type ReservationHandler struct {
-	uc           *usecase.ReservationUsecase
-	agendaClient agendav1.AgendaServiceClient
+	uc *usecase.ReservationUsecase
 }
 
-func NewReservationHandler(uc *usecase.ReservationUsecase, client agendav1.AgendaServiceClient) *ReservationHandler {
-	return &ReservationHandler{uc: uc, agendaClient: client}
+func NewReservationHandler(uc *usecase.ReservationUsecase) *ReservationHandler {
+	return &ReservationHandler{uc: uc}
 }
 
 // Create godoc
@@ -53,14 +51,12 @@ func (h *ReservationHandler) Create(c *gin.Context) {
 // @Failure     404  {object}  map[string]string
 // @Router      /reservations/{id} [get]
 func (h *ReservationHandler) Get(c *gin.Context) {
-	resp, err := h.agendaClient.GetReservation(c.Request.Context(), &agendav1.GetReservationRequest{
-		Id: c.Param("id"),
-	})
+	res, err := h.uc.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		_ = c.Error(err)
 		return
 	}
-	c.JSON(http.StatusOK, protoReservationToDTO(resp.Reservation))
+	c.JSON(http.StatusOK, res)
 }
 
 // List godoc
@@ -87,19 +83,10 @@ func (h *ReservationHandler) List(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.agendaClient.ListReservations(c.Request.Context(), &agendav1.ListReservationsRequest{
-		DoctorId: doctorID,
-		From:     fromStr,
-		To:       toStr,
-	})
+	list, err := h.uc.List(c.Request.Context(), doctorID, fromStr, toStr)
 	if err != nil {
 		_ = c.Error(err)
 		return
-	}
-
-	var list []domain.ReservationResponse
-	for _, r := range resp.Reservations {
-		list = append(list, *protoReservationToDTO(r))
 	}
 	c.JSON(http.StatusOK, list)
 }
@@ -117,22 +104,4 @@ func (h *ReservationHandler) Cancel(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
-}
-
-func protoReservationToDTO(r *agendav1.Reservation) *domain.ReservationResponse {
-	if r == nil {
-		return nil
-	}
-	typeStr := "follow_up"
-	if r.Type == agendav1.ReservationType_RESERVATION_TYPE_FIRST_VISIT {
-		typeStr = "first_visit"
-	}
-	statusStr := "confirmed"
-	if r.Status == agendav1.ReservationStatus_RESERVATION_STATUS_CANCELLED {
-		statusStr = "cancelled"
-	}
-	return &domain.ReservationResponse{
-		ID: r.Id, DoctorID: r.DoctorId, PatientID: r.PatientId,
-		StartsAt: r.StartsAt, EndsAt: r.EndsAt, Type: typeStr, Status: statusStr,
-	}
 }

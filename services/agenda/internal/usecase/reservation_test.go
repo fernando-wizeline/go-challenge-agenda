@@ -28,6 +28,7 @@ func TestCreateReservation_ConflictDetected(t *testing.T) {
 
 	reservationRepo := mocks.NewReservationRepository(t)
 	patientRepo := mocks.NewPatientRepository(t)
+	blockedRepo := mocks.NewBlockedSlotRepository(t)
 
 	patientRepo.EXPECT().
 		GetPatientByPhone(context.Background(), "555-0001").
@@ -44,7 +45,7 @@ func TestCreateReservation_ConflictDetected(t *testing.T) {
 		ListReservations(context.Background(), "doc-001", newStart.Add(-24*time.Hour), newEnd.Add(24*time.Hour)).
 		Return([]*domain.Reservation{existing}, nil)
 
-	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo)
+	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo, blockedRepo)
 
 	_, err := uc.Create(context.Background(), usecase.CreateReservationInput{
 		DoctorID:     "doc-001",
@@ -72,6 +73,7 @@ func TestCreateReservation_BoundaryConflict(t *testing.T) {
 
 	reservationRepo := mocks.NewReservationRepository(t)
 	patientRepo := mocks.NewPatientRepository(t)
+	blockedRepo := mocks.NewBlockedSlotRepository(t)
 
 	patientRepo.EXPECT().GetPatientByPhone(context.Background(), "555-0002").Return(nil, nil)
 	patientRepo.EXPECT().CreatePatient(context.Background(), mock.MatchedBy(func(_ *domain.Patient) bool { return true })).Return(nil).Maybe()
@@ -81,11 +83,12 @@ func TestCreateReservation_BoundaryConflict(t *testing.T) {
 	reservationRepo.EXPECT().
 		ListReservations(context.Background(), "doc-001", adjacentStart.Add(-24*time.Hour), newEnd.Add(24*time.Hour)).
 		Return([]*domain.Reservation{existing}, nil)
+	blockedRepo.EXPECT().ListBlockedSlots(context.Background(), "doc-001", adjacentStart, newEnd).Return(nil, nil)
 	reservationRepo.EXPECT().
 		CreateReservation(context.Background(), mock.MatchedBy(func(_ *domain.Reservation) bool { return true })).
 		Return(nil).Maybe()
 
-	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo)
+	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo, blockedRepo)
 
 	res, err := uc.Create(context.Background(), usecase.CreateReservationInput{
 		DoctorID: "doc-001", StartsAt: adjacentStart,
@@ -104,6 +107,7 @@ func TestCreateReservation_FirstVisitDuration(t *testing.T) {
 
 	reservationRepo := mocks.NewReservationRepository(t)
 	patientRepo := mocks.NewPatientRepository(t)
+	blockedRepo := mocks.NewBlockedSlotRepository(t)
 
 	patientRepo.EXPECT().GetPatientByPhone(context.Background(), "555-0003").Return(nil, nil)
 	patientRepo.EXPECT().CreatePatient(context.Background(), mock.MatchedBy(func(_ *domain.Patient) bool { return true })).Return(nil)
@@ -114,11 +118,12 @@ func TestCreateReservation_FirstVisitDuration(t *testing.T) {
 	reservationRepo.EXPECT().
 		ListReservations(context.Background(), "doc-001", base.Add(-24*time.Hour), buggyEnd.Add(24*time.Hour)).
 		Return(nil, nil)
+	blockedRepo.EXPECT().ListBlockedSlots(context.Background(), "doc-001", base, buggyEnd).Return(nil, nil)
 	reservationRepo.EXPECT().
 		CreateReservation(context.Background(), mock.MatchedBy(func(_ *domain.Reservation) bool { return true })).
 		Return(nil)
 
-	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo)
+	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo, blockedRepo)
 
 	res, err := uc.Create(context.Background(), usecase.CreateReservationInput{
 		DoctorID: "doc-001", StartsAt: base,
@@ -179,10 +184,11 @@ func TestListReservationsByUser(t *testing.T) {
 
 	reservationRepo := mocks.NewReservationRepository(t)
 	patientRepo := mocks.NewPatientRepository(t)
+	blockedRepo := mocks.NewBlockedSlotRepository(t)
 	patientRepo.EXPECT().GetPatient(ctx, "pat-001").Return(&domain.Patient{ID: "pat-001"}, nil)
 	reservationRepo.EXPECT().ListReservationsByUser(ctx, "pat-001").Return(want, nil)
 
-	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo)
+	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo, blockedRepo)
 	got, err := uc.ListReservationsByUser(ctx, "pat-001")
 
 	require.NoError(t, err)
@@ -195,9 +201,10 @@ func TestListReservationsByUser_UnknownPatient(t *testing.T) {
 	// reservationRepo has no expectations: it must not be queried for an unknown patient.
 	reservationRepo := mocks.NewReservationRepository(t)
 	patientRepo := mocks.NewPatientRepository(t)
+	blockedRepo := mocks.NewBlockedSlotRepository(t)
 	patientRepo.EXPECT().GetPatient(ctx, "missing").Return(nil, domain.ErrPatientNotFound)
 
-	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo)
+	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo, blockedRepo)
 	_, err := uc.ListReservationsByUser(ctx, "missing")
 
 	assert.ErrorIs(t, err, domain.ErrPatientNotFound)
@@ -246,9 +253,10 @@ func TestCreateReservation_UnknownPatient(t *testing.T) {
 	// reservationRepo has no expectations: nothing may be queried or created.
 	reservationRepo := mocks.NewReservationRepository(t)
 	patientRepo := mocks.NewPatientRepository(t)
+	blockedRepo := mocks.NewBlockedSlotRepository(t)
 	patientRepo.EXPECT().GetPatient(ctx, "missing").Return(nil, domain.ErrPatientNotFound)
 
-	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo)
+	uc := usecase.NewReservationUsecase(reservationRepo, patientRepo, blockedRepo)
 	_, err := uc.Create(ctx, usecase.CreateReservationInput{
 		DoctorID:  "doc-001",
 		StartsAt:  time.Date(2025, 6, 2, 10, 0, 0, 0, time.UTC),
@@ -257,4 +265,57 @@ func TestCreateReservation_UnknownPatient(t *testing.T) {
 	})
 
 	assert.ErrorIs(t, err, domain.ErrPatientNotFound)
+}
+
+func TestCreateReservation_BlockedSlot(t *testing.T) {
+	ctx := context.Background()
+	// Weekly block Mondays 10:00-11:00 that started three weeks earlier.
+	block := &domain.BlockedSlot{
+		ID: "blk", DoctorID: "doc-001",
+		StartsAt:       time.Date(2025, 5, 12, 10, 0, 0, 0, time.UTC),
+		EndsAt:         time.Date(2025, 5, 12, 11, 0, 0, 0, time.UTC),
+		RecurrenceType: domain.RecurrenceWeekly,
+	}
+
+	tests := []struct {
+		name    string
+		start   time.Time
+		blocked bool
+	}{
+		{"inside occurrence", time.Date(2025, 6, 2, 10, 15, 0, 0, time.UTC), true},
+		{"overlaps block start", time.Date(2025, 6, 2, 9, 45, 0, 0, time.UTC), true},
+		{"ends exactly at block start", time.Date(2025, 6, 2, 9, 30, 0, 0, time.UTC), false},
+		{"starts exactly at block end", time.Date(2025, 6, 2, 11, 0, 0, 0, time.UTC), false},
+		{"different day", time.Date(2025, 6, 3, 10, 0, 0, 0, time.UTC), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			end := tc.start.Add(domain.ReservationTypeFollowUp.SlotDuration())
+
+			reservationRepo := mocks.NewReservationRepository(t)
+			patientRepo := mocks.NewPatientRepository(t)
+			blockedRepo := mocks.NewBlockedSlotRepository(t)
+
+			patientRepo.EXPECT().GetPatient(ctx, "pat-001").Return(&domain.Patient{ID: "pat-001"}, nil)
+			reservationRepo.EXPECT().
+				ListReservations(ctx, "doc-001", tc.start.Add(-24*time.Hour), end.Add(24*time.Hour)).
+				Return(nil, nil)
+			blockedRepo.EXPECT().ListBlockedSlots(ctx, "doc-001", tc.start, end).Return([]*domain.BlockedSlot{block}, nil)
+			if !tc.blocked {
+				reservationRepo.EXPECT().CreateReservation(ctx, mock.Anything).Return(nil)
+			}
+
+			uc := usecase.NewReservationUsecase(reservationRepo, patientRepo, blockedRepo)
+			_, err := uc.Create(ctx, usecase.CreateReservationInput{
+				DoctorID: "doc-001", StartsAt: tc.start,
+				Type: domain.ReservationTypeFollowUp, PatientID: "pat-001",
+			})
+
+			if tc.blocked {
+				assert.ErrorIs(t, err, domain.ErrSlotNotAvailable)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

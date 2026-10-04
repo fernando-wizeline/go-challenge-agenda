@@ -35,10 +35,16 @@ func (r *BlockedSlotRepository) GetBlockedSlot(ctx context.Context, id string) (
 	return models.BlockedSlotFromModel(&m), nil
 }
 
+// ListBlockedSlots returns candidate slots for [from, to]. Recurring slots are
+// included whenever their series could reach the window; callers must expand
+// them with BlockedSlot.Occurrences, which does the exact filtering.
 func (r *BlockedSlotRepository) ListBlockedSlots(ctx context.Context, doctorID string, from, to time.Time) ([]*domain.BlockedSlot, error) {
 	var ms []models.BlockedSlot
 	err := r.db.WithContext(ctx).
-		Where("doctor_id = ? AND starts_at <= ? AND ends_at >= ?", doctorID, to.UTC(), from.UTC()).
+		Where(`doctor_id = ? AND starts_at <= ? AND (
+			(recurrence_type = 0 AND ends_at >= ?)
+			OR (recurrence_type != 0 AND (recurrence_until IS NULL OR recurrence_until >= ?))
+		)`, doctorID, to.UTC(), from.UTC(), from.UTC()).
 		Find(&ms).Error
 	if err != nil {
 		return nil, err

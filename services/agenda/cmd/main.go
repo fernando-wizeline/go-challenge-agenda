@@ -1,25 +1,38 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	agendav1 "go-challenge-agenda/gen/agenda/v1"
 	"go-challenge-agenda/services/agenda/config"
 	agendagrpc "go-challenge-agenda/services/agenda/internal/grpc"
+	"go-challenge-agenda/services/agenda/internal/observability"
 	"go-challenge-agenda/services/agenda/internal/repository/sqlite"
 	"go-challenge-agenda/services/agenda/internal/usecase"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"gorm.io/gorm"
 )
 
 func main() {
 	cfg := config.Load()
+
+	logger := observability.NewLogger(os.Stdout, cfg.LogLevel, cfg.LogFormat)
+	slog.SetDefault(logger)
+
+	registry := prometheus.NewRegistry()
+	metrics := observability.NewMetrics(registry)
 
 	db, err := openDB(cfg)
 	if err != nil {
@@ -42,15 +55,29 @@ func main() {
 	reservationUC := usecase.NewReservationUsecase(reservationRepo, patientRepo, blockedSlotRepo)
 	blockedSlotUC := usecase.NewBlockedSlotUsecase(blockedSlotRepo)
 
-	srv := agendagrpc.NewServer(doctorRepo, availUC, reservationUC, blockedSlotUC, patientRepo)
+	srv := agendagrpc.NewServer(
+		doctorRepo,
+		observability.NewObservedAvailability(availUC, logger, metrics),
+		observability.NewObservedReservation(reservationUC, logger, metrics),
+		blockedSlotUC,
+		patientRepo,
+	)
 
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
 	if err != nil {
 		log.Fatalf("listen: %v", err)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(observability.UnaryLoggingInterceptor(logger)))
 	agendav1.RegisterAgendaServiceServer(grpcServer, srv)
+
+	metricsSrv := &http.Server{Addr: cfg.MetricsAddr, Handler: observability.Handler(registry)}
+	go func() {
+		log.Printf("agenda metrics listening on %s/metrics", cfg.MetricsAddr)
+		if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("metrics serve stopped: %v", err)
+		}
+	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -66,6 +93,10 @@ func main() {
 	log.Println("shutting down agenda service...")
 
 	grpcServer.GracefulStop()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = metricsSrv.Shutdown(shutdownCtx)
 
 	if sqlDB, err := db.DB(); err == nil {
 		sqlDB.Close()

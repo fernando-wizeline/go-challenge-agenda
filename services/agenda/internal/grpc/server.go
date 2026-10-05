@@ -14,19 +14,34 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// AvailabilityService and ReservationService are the usecase methods the server
+// needs. Keeping them as interfaces lets cross-cutting concerns such as logging
+// wrap the usecases without touching them.
+type AvailabilityService interface {
+	GetAvailability(ctx context.Context, doctorID string, date time.Time, resType domain.ReservationType) (*usecase.AvailabilityResult, error)
+}
+
+type ReservationService interface {
+	Create(ctx context.Context, in usecase.CreateReservationInput) (*domain.Reservation, error)
+	Get(ctx context.Context, id string) (*domain.Reservation, error)
+	List(ctx context.Context, doctorID string, from, to time.Time) ([]*domain.Reservation, error)
+	ListReservationsByUser(ctx context.Context, patientID string) ([]*domain.Reservation, error)
+	Cancel(ctx context.Context, id string) error
+}
+
 type Server struct {
 	agendav1.UnimplementedAgendaServiceServer
 	doctors      domain.DoctorRepository
-	availability *usecase.AvailabilityUsecase
-	reservations *usecase.ReservationUsecase
+	availability AvailabilityService
+	reservations ReservationService
 	blockedSlots *usecase.BlockedSlotUsecase
 	patients     domain.PatientRepository
 }
 
 func NewServer(
 	doctors domain.DoctorRepository,
-	availability *usecase.AvailabilityUsecase,
-	reservations *usecase.ReservationUsecase,
+	availability AvailabilityService,
+	reservations ReservationService,
 	blockedSlots *usecase.BlockedSlotUsecase,
 	patients domain.PatientRepository,
 ) *Server {

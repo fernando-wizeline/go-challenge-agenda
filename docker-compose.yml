@@ -5,12 +5,14 @@ services:
       dockerfile: services/agenda/Dockerfile
     environment:
       AGENDA_GRPC_ADDR: ":50051"
+      AGENDA_METRICS_ADDR: ":9090"
       DB_DRIVER: sqlite3
       DB_SOURCE: /data/agenda.db
     volumes:
       - agenda-data:/data
     ports:
       - "50051:50051"
+      - "9090:9090"
 
   api:
     build:

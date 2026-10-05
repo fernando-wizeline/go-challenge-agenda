@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -43,3 +44,7 @@ var ErrPatientNotFound = errors.New("patient not found")
 
 // ErrSlotNotAvailable is returned when a requested reservation overlaps an existing one.
 var ErrSlotNotAvailable = errors.New("time slot not available")
+
+// ErrSlotBlocked is returned when a requested reservation overlaps a blocked
+// slot. It wraps ErrSlotNotAvailable, so errors.Is matches both.
+var ErrSlotBlocked = fmt.Errorf("%w: blocked slot", ErrSlotNotAvailable)

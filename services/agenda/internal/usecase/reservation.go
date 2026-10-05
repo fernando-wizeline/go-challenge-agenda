@@ -73,7 +73,7 @@ func (u *ReservationUsecase) Create(ctx context.Context, in CreateReservationInp
 		return nil, fmt.Errorf("check blocked slots: %w", err)
 	}
 	if blocked {
-		return nil, domain.ErrSlotNotAvailable
+		return nil, domain.ErrSlotBlocked
 	}
 
 	res := &domain.Reservation{
